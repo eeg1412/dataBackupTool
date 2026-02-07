@@ -1,0 +1,19 @@
+{
+  "name": "data-backup-tool",
+  "version": "1.0.0",
+  "description": "Data backup management tool with security authentication",
+  "private": true,
+  "scripts": {
+    "dev": "concurrently --names \"BACK,FRONT\" --prefix \"[{name}]\" \"npm run dev -w back\" \"npm run dev -w dataBackupToolFront\"",
+    "build": "npm run build -w dataBackupToolFront",
+    "start": "npm start -w back",
+    "install-all": "npm install && npm install -w back && npm install -w dataBackupToolFront"
+  },
+  "workspaces": [
+    "back",
+    "dataBackupToolFront"
+  ],
+  "devDependencies": {
+    "concurrently": "^9.0.0"
+  }
+}

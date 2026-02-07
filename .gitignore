@@ -8,31 +8,6 @@ pnpm-debug.log*
 lerna-debug.log*
 
 node_modules
-
-# 环境变量（本地配置，不提交）
-.env
-.env.local
-.env.*.local
-
-# 数据库（包含敏感的登录日志）
-data/*.json
-
-# 前端构建
-front/
-dist/
-build/
-
-# IDE
-.vscode/
-.idea/
-*.swp
-*.swo
-*~
-.DS_Store
-
-# 临时文件
-tmp/
-temp/
 dist
 dist-ssr
 *.local
