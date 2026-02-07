@@ -100,9 +100,11 @@ router.post('/archives', authMiddleware, async (req, res) => {
   borgEnv.BORG_PASSPHRASE =
     passphrase && typeof passphrase === 'string' ? passphrase : ''
   borgEnv.BORG_UNKNOWN_UNENCRYPTED_REPO_ACCESS_IS_OK = 'yes'
+  // Docker 中挂载已有仓库时，borg 会提示 relocated repository 确认
+  borgEnv.BORG_RELOCATED_REPO_ACCESS_IS_OK = 'yes'
 
   try {
-    const { stdout } = await execFileAsync(
+    const { stdout, stderr } = await execFileAsync(
       'borg',
       ['list', '--json', '--bypass-lock', resolvedRepo],
       {
@@ -110,6 +112,9 @@ router.post('/archives', authMiddleware, async (req, res) => {
         env: borgEnv
       }
     )
+    if (stderr) {
+      console.log('[Borg] list stderr:', stderr)
+    }
 
     const data = JSON.parse(stdout)
     const archives = (data.archives || []).map(a => ({
@@ -170,17 +175,13 @@ router.get('/download', downloadAuthMiddleware, (req, res) => {
 
   const safeArchiveName = archive.replace(/[^a-zA-Z0-9._\-]/g, '_')
 
-  res.setHeader('Content-Type', 'application/gzip')
-  res.setHeader(
-    'Content-Disposition',
-    `attachment; filename="${encodeURIComponent(safeArchiveName)}.tar.gz"; filename*=UTF-8''${encodeURIComponent(safeArchiveName)}.tar.gz`
-  )
-  res.setHeader('Transfer-Encoding', 'chunked')
-
   const borgEnv = { ...process.env }
   // 始终设置 BORG_PASSPHRASE 以防止交互式提示
   borgEnv.BORG_PASSPHRASE = passphrase || ''
   borgEnv.BORG_UNKNOWN_UNENCRYPTED_REPO_ACCESS_IS_OK = 'yes'
+  borgEnv.BORG_RELOCATED_REPO_ACCESS_IS_OK = 'yes'
+
+  console.log(`[Borg] 开始导出: repo=${resolvedRepo}, archive=${archive}`)
 
   const child = spawn(
     'borg',
@@ -197,28 +198,57 @@ router.get('/download', downloadAuthMiddleware, (req, res) => {
     }
   )
 
+  let stderrChunks = []
+  let headersSent = false
+
+  child.stderr.on('data', data => {
+    const msg = data.toString()
+    stderrChunks.push(msg)
+    console.error(`[Borg] export-tar stderr: ${msg}`)
+  })
+
+  // 等待第一块 stdout 数据再发送响应头，确保 borg 正常启动
+  child.stdout.once('data', firstChunk => {
+    headersSent = true
+    res.setHeader('Content-Type', 'application/gzip')
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="${encodeURIComponent(safeArchiveName)}.tar.gz"; filename*=UTF-8''${encodeURIComponent(safeArchiveName)}.tar.gz`
+    )
+    res.setHeader('Transfer-Encoding', 'chunked')
+    res.write(firstChunk)
+    child.stdout.pipe(res)
+  })
+
   // Telegram 通知
   const ip = getClientIP(req)
   sendTelegramMessage(
     `⬇️ <b>下载 Borg 存档</b>\n仓库: <code>${escapeHTML(path.basename(resolvedRepo))}</code>\n存档: <code>${escapeHTML(archive)}</code>\nIP: <code>${escapeHTML(ip)}</code>\n时间: ${new Date().toLocaleString('zh-CN')}`
   ).catch(() => {})
 
-  child.stdout.pipe(res)
-
-  child.stderr.on('data', data => {
-    console.error(`[Borg] stderr: ${data.toString()}`)
-  })
-
   child.on('error', err => {
     console.error('[Borg] 子进程错误:', err.message)
-    if (!res.headersSent) {
-      res.status(500).json({ error: '导出存档失败' })
+    if (!headersSent) {
+      res.status(500).json({ error: '导出存档失败: ' + err.message })
     }
   })
 
   child.on('close', code => {
-    if (code !== 0 && !res.headersSent) {
-      res.status(500).json({ error: '导出存档失败' })
+    const allStderr = stderrChunks.join('')
+    console.log(
+      `[Borg] export-tar 进程退出, code=${code}, stderr=${allStderr || '(empty)'}`
+    )
+    if (code !== 0) {
+      if (!headersSent) {
+        const errMsg =
+          allStderr.includes('passphrase') || allStderr.includes('Wrong')
+            ? '仓库密码错误'
+            : `导出存档失败 (exit code ${code}): ${allStderr.slice(0, 200)}`
+        res.status(500).json({ error: errMsg })
+      } else {
+        // 响应头已发送，只能中断连接
+        res.end()
+      }
     }
   })
 
