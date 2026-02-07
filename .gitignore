@@ -23,7 +23,7 @@ back/data/
 *.pem
 
 # Build output
-back/front/
+# back/front/
 
 # Editor directories and files
 .vscode/*
