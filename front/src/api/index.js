@@ -71,27 +71,26 @@ export const borgAPI = {
   },
   archives(repo, passphrase = '') {
     return api.post('/borg/archives', { repo, passphrase })
+  },
+  /** 准备下载：传入 repo + 存档序号 + 密码，返回含加密信息的短效 token */
+  prepareDownload(repo, archiveIndex, passphrase = '') {
+    return api.post('/borg/prepare-download', { repo, archiveIndex, passphrase })
   }
 }
 
-export function getDownloadUrl(type, params, downloadToken) {
+export function getFileDownloadUrl(filePath, downloadToken) {
   const token = downloadToken || getToken()
-  if (type === 'files') {
-    return `${baseURL}/files/download?path=${encodeURIComponent(params.path)}&token=${encodeURIComponent(token)}`
-  } else if (type === 'borg') {
-    let url = `${baseURL}/borg/download?repo=${encodeURIComponent(params.repo)}&archive=${encodeURIComponent(params.archive)}&token=${encodeURIComponent(token)}`
-    if (params.passphrase) {
-      url += `&passphrase=${encodeURIComponent(params.passphrase)}`
-    }
-    return url
-  }
-  return ''
+  return `${baseURL}/files/download?path=${encodeURIComponent(filePath)}&token=${encodeURIComponent(token)}`
+}
+
+export function getBorgDownloadUrl(borgToken) {
+  return `${baseURL}/borg/download?token=${encodeURIComponent(borgToken)}`
 }
 
 /**
- * 获取临时下载 token 并生成下载 URL
+ * 获取文件下载的安全 URL（使用短效 token）
  */
-export async function getSecureDownloadUrl(type, params) {
+export async function getSecureFileDownloadUrl(filePath) {
   const res = await authAPI.getDownloadToken()
-  return getDownloadUrl(type, params, res.data.token)
+  return getFileDownloadUrl(filePath, res.data.token)
 }

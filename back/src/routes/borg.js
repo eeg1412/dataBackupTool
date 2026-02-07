@@ -3,7 +3,11 @@ import { execFile, spawn } from 'child_process'
 import { promisify } from 'util'
 import path from 'path'
 import { config } from '../config.js'
-import { authMiddleware, downloadAuthMiddleware } from '../middleware/auth.js'
+import {
+  authMiddleware,
+  generateBorgDownloadToken,
+  verifyToken
+} from '../middleware/auth.js'
 import { sendTelegramMessage } from '../utils/telegram.js'
 import { getClientIP } from '../utils/ip.js'
 
@@ -31,15 +35,6 @@ function isRepoAllowed(repo) {
  */
 function getResolvedRepo(repo) {
   return path.resolve(repo)
-}
-
-/**
- * 验证存档名称是否合法（防止命令注入）
- */
-function isValidArchiveName(name) {
-  if (!name || typeof name !== 'string') return false
-  if (name.length > 250) return false
-  return /^[a-zA-Z0-9._\-:]+$/.test(name)
 }
 
 /**
@@ -152,12 +147,12 @@ router.post('/archives', authMiddleware, async (req, res) => {
 })
 
 /**
- * 流式导出并下载存档（使用 borg export-tar，不占用磁盘空间）
+ * 准备下载：校验参数，将 repo + archiveName + passphrase 编码进短效 JWT
+ * 前端先 POST 此接口拿到 token，再用 GET /download?token=xxx 下载
+ * 这样 URL 中不会暴露密码和存档名
  */
-router.get('/download', downloadAuthMiddleware, (req, res) => {
-  const repo = req.query.repo
-  const archive = req.query.archive
-  const passphrase = req.query.passphrase || ''
+router.post('/prepare-download', authMiddleware, async (req, res) => {
+  const { repo, archiveIndex, passphrase } = req.body || {}
 
   if (process.platform !== 'linux') {
     return res.status(400).json({ error: 'Borg 仅在 Linux 上可用' })
@@ -167,11 +162,88 @@ router.get('/download', downloadAuthMiddleware, (req, res) => {
     return res.status(403).json({ error: '无权访问此仓库' })
   }
 
-  if (!isValidArchiveName(archive)) {
-    return res.status(400).json({ error: '无效的存档名称' })
+  if (typeof archiveIndex !== 'number' || archiveIndex < 0) {
+    return res.status(400).json({ error: '无效的存档序号' })
   }
 
   const resolvedRepo = getResolvedRepo(repo)
+
+  // 先列出存档以验证序号并获取真实存档名
+  const borgEnv = { ...process.env }
+  borgEnv.BORG_PASSPHRASE =
+    passphrase && typeof passphrase === 'string' ? passphrase : ''
+  borgEnv.BORG_UNKNOWN_UNENCRYPTED_REPO_ACCESS_IS_OK = 'yes'
+  borgEnv.BORG_RELOCATED_REPO_ACCESS_IS_OK = 'yes'
+
+  try {
+    const { stdout, stderr } = await execFileAsync(
+      'borg',
+      ['list', '--json', '--bypass-lock', resolvedRepo],
+      { timeout: 30000, env: borgEnv }
+    )
+    if (stderr) {
+      console.log('[Borg] prepare-download list stderr:', stderr)
+    }
+
+    const data = JSON.parse(stdout)
+    const archives = (data.archives || []).map(a => ({
+      name: a.name,
+      start: a.start
+    }))
+
+    // 按时间倒序排列（与前端显示一致）
+    archives.sort(
+      (a, b) => new Date(b.start).getTime() - new Date(a.start).getTime()
+    )
+
+    if (archiveIndex >= archives.length) {
+      return res.status(400).json({ error: '存档序号超出范围' })
+    }
+
+    const archiveName = archives[archiveIndex].name
+
+    // 将信息编码进短效 JWT
+    const token = generateBorgDownloadToken({
+      username: req.user.username,
+      repo: resolvedRepo,
+      archiveName,
+      passphrase: passphrase || ''
+    })
+
+    res.json({ token, archiveName })
+  } catch (err) {
+    console.error('[Borg] prepare-download 失败:', err.message)
+    if (err.stderr) {
+      console.error('[Borg] prepare-download stderr:', err.stderr)
+    }
+    res.status(500).json({ error: '准备下载失败' })
+  }
+})
+
+/**
+ * 流式导出并下载存档（使用 borg export-tar，不占用磁盘空间）
+ * token 中已包含所有所需信息（repo、archiveName、passphrase），URL 不再暴露敏感数据
+ */
+router.get('/download', (req, res) => {
+  const tokenStr = req.query.token
+  if (!tokenStr) {
+    return res.status(401).json({ error: '需要下载凭证' })
+  }
+
+  const payload = verifyToken(tokenStr)
+  if (!payload || payload.purpose !== 'borg-download') {
+    return res.status(401).json({ error: '下载凭证无效或已过期' })
+  }
+
+  const { repo: resolvedRepo, archiveName: archive, passphrase } = payload
+
+  if (process.platform !== 'linux') {
+    return res.status(400).json({ error: 'Borg 仅在 Linux 上可用' })
+  }
+
+  if (!isRepoAllowed(resolvedRepo)) {
+    return res.status(403).json({ error: '无权访问此仓库' })
+  }
 
   const safeArchiveName = archive.replace(/[^a-zA-Z0-9._\-]/g, '_')
 

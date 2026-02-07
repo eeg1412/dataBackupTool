@@ -173,7 +173,7 @@
 
               <div v-else class="divide-y divide-gray-100 dark:divide-gray-700">
                 <div
-                  v-for="archive in repo.archives"
+                  v-for="(archive, idx) in repo.archives"
                   :key="archive.name"
                   class="flex items-center justify-between px-4 sm:px-5 py-2.5 sm:py-3 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors"
                 >
@@ -188,12 +188,12 @@
                     </p>
                   </div>
                   <button
-                    @click="downloadArchive(repo, archive.name)"
-                    :disabled="downloading === `${repo.path}::${archive.name}`"
+                    @click="downloadArchive(repo, idx)"
+                    :disabled="downloading === `${repo.path}::${idx}`"
                     class="ml-2 sm:ml-3 px-2.5 sm:px-3 py-1 sm:py-1.5 text-xs sm:text-sm bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors disabled:opacity-50 shrink-0"
                   >
                     {{
-                      downloading === `${repo.path}::${archive.name}`
+                      downloading === `${repo.path}::${idx}`
                         ? '准备中...'
                         : '下载'
                     }}
@@ -278,7 +278,7 @@
 <script setup>
 import { ref, onMounted, nextTick } from 'vue'
 import Layout from '../components/Layout.vue'
-import { borgAPI, getSecureDownloadUrl } from '../api'
+import { borgAPI, getBorgDownloadUrl } from '../api'
 import {
   getPassword,
   savePassword as savePasswordToDB
@@ -457,15 +457,18 @@ function formatDate(dateStr) {
   }
 }
 
-async function downloadArchive(repo, archiveName) {
-  const key = `${repo.path}::${archiveName}`
+async function downloadArchive(repo, archiveIndex) {
+  const key = `${repo.path}::${archiveIndex}`
   downloading.value = key
   try {
-    const url = await getSecureDownloadUrl('borg', {
-      repo: repo.path,
-      archive: archiveName,
-      passphrase: repo.passphrase || ''
-    })
+    // 通过 POST 接口传递 repo + 序号 + 密码，后端返回含加密信息的短效 token
+    const res = await borgAPI.prepareDownload(
+      repo.path,
+      archiveIndex,
+      repo.passphrase || ''
+    )
+    const url = getBorgDownloadUrl(res.data.token)
+    const archiveName = res.data.archiveName || `archive-${archiveIndex}`
     const a = document.createElement('a')
     a.href = url
     a.download = `${archiveName}.tar.gz`
@@ -473,7 +476,9 @@ async function downloadArchive(repo, archiveName) {
     a.click()
     document.body.removeChild(a)
   } catch (err) {
-    console.error('获取下载凭证失败:', err)
+    const msg = err.response?.data?.error || '准备下载失败'
+    alert(msg)
+    console.error('下载失败:', err)
   } finally {
     setTimeout(() => {
       downloading.value = ''

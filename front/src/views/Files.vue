@@ -298,7 +298,7 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import Layout from '../components/Layout.vue'
-import { filesAPI, getSecureDownloadUrl } from '../api'
+import { filesAPI, getSecureFileDownloadUrl } from '../api'
 
 const loading = ref(true)
 const browseLoading = ref(false)
@@ -414,7 +414,7 @@ function navigateToBreadcrumb(index) {
 async function downloadDir(dirPath, name) {
   downloading.value = dirPath
   try {
-    const url = await getSecureDownloadUrl('files', { path: dirPath })
+    const url = await getSecureFileDownloadUrl(dirPath)
     const a = document.createElement('a')
     a.href = url
     a.download = `${name || 'download'}.zip`
