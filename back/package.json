@@ -1,0 +1,17 @@
+{
+  "name": "back",
+  "version": "1.0.0",
+  "main": "server.js",
+  "license": "MIT",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "dependencies": {
+    "@zip.js/zip.js": "^2.8.17",
+    "dotenv": "^17.2.4",
+    "express": "5",
+    "fflate": "^0.8.2",
+    "jsonwebtoken": "^9.0.3"
+  }
+}
