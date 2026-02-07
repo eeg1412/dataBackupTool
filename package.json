@@ -1,0 +1,15 @@
+{
+  "name": "data-backup-tool",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "predev": "cd back && yarn install && cd ../front && yarn install",
+    "dev": "concurrently -n back,front -c blue,green \"cd back && yarn dev\" \"cd front && yarn dev\"",
+    "prestart": "cd back && yarn install",
+    "start": "cd back && yarn start",
+    "build": "cd front && yarn install && yarn build"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "name": "data-backup-tool-backend",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js"
+  },
+  "dependencies": {
+    "@zip.js/zip.js": "^2.8.17",
+    "dotenv": "^17.2.4",
+    "express": "5",
+    "helmet": "^8.1.0",
+    "jsonwebtoken": "^9.0.3"
+  }
+}

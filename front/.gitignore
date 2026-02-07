@@ -12,19 +12,6 @@ dist
 dist-ssr
 *.local
 
-# Environment variables
-.env
-!.env.example
-
-# Data files
-back/data/
-
-# RSA keys
-*.pem
-
-# Build output
-back/front/
-
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
