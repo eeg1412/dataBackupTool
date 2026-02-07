@@ -21,11 +21,10 @@ export function generateDownloadToken(payload) {
  * 将 repo、archiveName、passphrase 等敏感信息编码进 JWT，避免暴露在 URL 中
  */
 export function generateBorgDownloadToken(payload) {
-  return jwt.sign(
-    { ...payload, purpose: 'borg-download' },
-    getPrivateKey(),
-    { algorithm: 'RS256', expiresIn: '5m' }
-  )
+  return jwt.sign({ ...payload, purpose: 'borg-download' }, getPrivateKey(), {
+    algorithm: 'RS256',
+    expiresIn: '5m'
+  })
 }
 
 export function verifyToken(token) {

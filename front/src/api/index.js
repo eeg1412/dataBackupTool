@@ -74,7 +74,11 @@ export const borgAPI = {
   },
   /** 准备下载：传入 repo + 存档序号 + 密码，返回含加密信息的短效 token */
   prepareDownload(repo, archiveIndex, passphrase = '') {
-    return api.post('/borg/prepare-download', { repo, archiveIndex, passphrase })
+    return api.post('/borg/prepare-download', {
+      repo,
+      archiveIndex,
+      passphrase
+    })
   }
 }
 
