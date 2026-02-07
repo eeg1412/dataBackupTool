@@ -154,7 +154,8 @@ const mobileMenuOpen = ref(false)
 const navLinks = [
   { to: '/files', name: 'Files', label: '文件管理' },
   { to: '/borg', name: 'Borg', label: 'Borg 备份' },
-  { to: '/passwords', name: 'Passwords', label: '密码管理' }
+  { to: '/passwords', name: 'Passwords', label: '密码管理' },
+  { to: '/login-records', name: 'LoginRecords', label: '登录记录' }
 ]
 
 function toggleDark() {

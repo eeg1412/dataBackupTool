@@ -33,6 +33,12 @@ const routes = [
     name: 'Passwords',
     component: () => import('../views/Passwords.vue'),
     meta: { requiresAuth: true }
+  },
+  {
+    path: '/login-records',
+    name: 'LoginRecords',
+    component: () => import('../views/LoginRecords.vue'),
+    meta: { requiresAuth: true }
   }
 ]
 

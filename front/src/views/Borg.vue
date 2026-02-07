@@ -157,11 +157,10 @@
               >
                 {{ repo.error }}
                 <button
-                  v-if="repo.needsPassword"
-                  @click="promptPassword(repo)"
+                  @click="retryWithPassword(repo)"
                   class="ml-2 text-blue-600 dark:text-blue-400 hover:underline"
                 >
-                  输入密码重试
+                  重新输入密码
                 </button>
               </div>
 
@@ -219,17 +218,22 @@
             输入仓库密码
           </h3>
           <p class="text-sm text-gray-500 dark:text-gray-400 mb-4 truncate">
-            {{ passwordRepo?.path }}
+            {{ passwordRepo?.name || passwordRepo?.path }}
+          </p>
+          <p
+            v-if="passwordDialogHint"
+            class="text-xs text-red-500 dark:text-red-400 mb-3"
+          >
+            {{ passwordDialogHint }}
           </p>
           <form @submit.prevent="submitPassword">
             <input
               ref="passwordInput"
               v-model="passwordValue"
               type="password"
-              required
               autocomplete="off"
               class="w-full px-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition text-sm"
-              placeholder="Borg 仓库密码"
+              placeholder="Borg 仓库密码（无密码可留空）"
             />
             <label class="flex items-center mt-3 cursor-pointer">
               <input
@@ -250,6 +254,13 @@
                 取消
               </button>
               <button
+                type="button"
+                @click="submitPasswordEmpty"
+                class="px-4 py-2 text-sm text-gray-600 dark:text-gray-400 border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+              >
+                无密码
+              </button>
+              <button
                 type="submit"
                 :disabled="!passwordValue"
                 class="px-4 py-2 text-sm bg-blue-600 text-white hover:bg-blue-700 rounded-lg transition-colors disabled:opacity-50"
@@ -267,7 +278,7 @@
 <script setup>
 import { ref, onMounted, nextTick } from 'vue'
 import Layout from '../components/Layout.vue'
-import { borgAPI, getDownloadUrl } from '../api'
+import { borgAPI, getSecureDownloadUrl } from '../api'
 import {
   getPassword,
   savePassword as savePasswordToDB
@@ -286,6 +297,7 @@ const passwordRepo = ref(null)
 const passwordValue = ref('')
 const savePassword = ref(false)
 const passwordInput = ref(null)
+const passwordDialogHint = ref('')
 let passwordResolve = null
 
 onMounted(async () => {
@@ -309,6 +321,7 @@ async function loadRepos() {
       error: '',
       archives: null,
       passphrase: '',
+      passphraseReady: false, // 标记是否已确认密码（含无密码）
       needsPassword: false
     }))
   } catch (err) {
@@ -318,11 +331,12 @@ async function loadRepos() {
   }
 }
 
-function promptPassword(repo) {
+function promptPassword(repo, hint = '') {
   return new Promise(resolve => {
     passwordRepo.value = repo
     passwordValue.value = ''
     savePassword.value = false
+    passwordDialogHint.value = hint
     showPasswordDialog.value = true
     passwordResolve = resolve
     nextTick(() => {
@@ -335,6 +349,21 @@ function cancelPassword() {
   showPasswordDialog.value = false
   if (passwordResolve) {
     passwordResolve(null)
+    passwordResolve = null
+  }
+}
+
+function submitPasswordEmpty() {
+  const repo = passwordRepo.value
+  showPasswordDialog.value = false
+
+  if (repo) {
+    repo.passphrase = ''
+    repo.passphraseReady = true
+  }
+
+  if (passwordResolve) {
+    passwordResolve('')
     passwordResolve = null
   }
 }
@@ -355,6 +384,7 @@ async function submitPassword() {
 
   if (repo) {
     repo.passphrase = value
+    repo.passphraseReady = true
   }
 
   if (passwordResolve) {
@@ -366,7 +396,29 @@ async function submitPassword() {
 async function toggleRepo(repo) {
   repo.expanded = !repo.expanded
   if (repo.expanded && !repo.archives) {
-    await loadArchives(repo)
+    // 先检查是否有已保存的密码
+    let savedPassword = null
+    try {
+      savedPassword = await getPassword(repo.path)
+    } catch {
+      // ignore
+    }
+
+    if (savedPassword) {
+      // 有保存的密码，直接使用
+      repo.passphrase = savedPassword
+      repo.passphraseReady = true
+      await loadArchives(repo)
+    } else {
+      // 没有保存的密码，弹出对话框让用户选择
+      const pwd = await promptPassword(repo)
+      if (pwd === null) {
+        // 用户取消，折叠仓库
+        repo.expanded = false
+        return
+      }
+      await loadArchives(repo)
+    }
   }
 }
 
@@ -375,31 +427,17 @@ async function loadArchives(repo) {
   repo.error = ''
   repo.needsPassword = false
 
-  // 尝试使用已保存的密码
-  let passphrase = repo.passphrase
-  if (!passphrase) {
-    try {
-      const saved = await getPassword(repo.path)
-      if (saved) {
-        passphrase = saved
-        repo.passphrase = saved
-      }
-    } catch {
-      // ignore
-    }
-  }
-
   try {
-    const res = await borgAPI.archives(repo.path, passphrase)
+    const res = await borgAPI.archives(repo.path, repo.passphrase || '')
     repo.archives = res.data.archives
   } catch (err) {
     const errorMsg = err.response?.data?.error || '加载存档列表失败'
     if (err.response?.status === 403 && errorMsg.includes('密码')) {
       repo.needsPassword = true
-      repo.error = '该仓库需要密码才能访问'
-      // 自动弹出密码输入
-      const pwd = await promptPassword(repo)
-      if (pwd) {
+      repo.error = '密码错误或该仓库需要密码'
+      // 弹出密码输入，附带提示
+      const pwd = await promptPassword(repo, '密码错误，请重新输入正确的密码')
+      if (pwd !== null) {
         await loadArchives(repo)
       }
     } else {
@@ -419,22 +457,35 @@ function formatDate(dateStr) {
   }
 }
 
-function downloadArchive(repo, archiveName) {
+async function downloadArchive(repo, archiveName) {
   const key = `${repo.path}::${archiveName}`
   downloading.value = key
-  const url = getDownloadUrl('borg', {
-    repo: repo.path,
-    archive: archiveName,
-    passphrase: repo.passphrase || ''
-  })
-  const a = document.createElement('a')
-  a.href = url
-  a.download = `${archiveName}.tar.gz`
-  document.body.appendChild(a)
-  a.click()
-  document.body.removeChild(a)
-  setTimeout(() => {
-    downloading.value = ''
-  }, 2000)
+  try {
+    const url = await getSecureDownloadUrl('borg', {
+      repo: repo.path,
+      archive: archiveName,
+      passphrase: repo.passphrase || ''
+    })
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `${archiveName}.tar.gz`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+  } catch (err) {
+    console.error('获取下载凭证失败:', err)
+  } finally {
+    setTimeout(() => {
+      downloading.value = ''
+    }, 2000)
+  }
+}
+
+async function retryWithPassword(repo) {
+  const pwd = await promptPassword(repo, '')
+  if (pwd !== null) {
+    repo.archives = null
+    await loadArchives(repo)
+  }
 }
 </script>

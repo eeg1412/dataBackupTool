@@ -6,6 +6,16 @@ export function generateToken(payload, remember = false) {
   return jwt.sign(payload, getPrivateKey(), { algorithm: 'RS256', expiresIn })
 }
 
+/**
+ * 生成短时效下载专用 token（5分钟有效）
+ */
+export function generateDownloadToken(payload) {
+  return jwt.sign({ ...payload, purpose: 'download' }, getPrivateKey(), {
+    algorithm: 'RS256',
+    expiresIn: '5m'
+  })
+}
+
 export function verifyToken(token) {
   try {
     return jwt.verify(token, getPublicKey(), { algorithms: ['RS256'] })

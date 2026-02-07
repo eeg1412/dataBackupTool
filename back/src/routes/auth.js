@@ -1,13 +1,19 @@
 import { Router } from 'express'
 import crypto from 'crypto'
 import { config } from '../config.js'
-import { generateToken, verifyToken } from '../middleware/auth.js'
+import {
+  generateToken,
+  generateDownloadToken,
+  verifyToken,
+  authMiddleware
+} from '../middleware/auth.js'
 import { getClientIP } from '../utils/ip.js'
 import {
   addRecord,
   isIPBlocked,
   getRecentFailureCount,
-  cleanOldRecords
+  cleanOldRecords,
+  getRecords
 } from '../utils/loginRecords.js'
 import { sendTelegramMessage } from '../utils/telegram.js'
 
@@ -111,6 +117,27 @@ router.get('/check', (req, res) => {
 router.post('/logout', (_req, res) => {
   // JWT 无状态，客户端删除即可
   res.json({ message: '已退出登录' })
+})
+
+/**
+ * 生成短时效下载 token（5分钟有效），避免长期 token 暴露在 URL 中
+ */
+router.post('/download-token', authMiddleware, (req, res) => {
+  const token = generateDownloadToken({ username: req.user.username })
+  res.json({ token })
+})
+
+/**
+ * 获取登录记录
+ */
+router.get('/login-records', authMiddleware, (req, res) => {
+  const page = Math.max(1, parseInt(req.query.page) || 1)
+  const pageSize = Math.min(
+    100,
+    Math.max(1, parseInt(req.query.pageSize) || 50)
+  )
+  const data = getRecords(page, pageSize)
+  res.json(data)
 })
 
 export default router

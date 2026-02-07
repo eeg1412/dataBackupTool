@@ -298,7 +298,7 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import Layout from '../components/Layout.vue'
-import { filesAPI, getDownloadUrl } from '../api'
+import { filesAPI, getSecureDownloadUrl } from '../api'
 
 const loading = ref(true)
 const browseLoading = ref(false)
@@ -411,17 +411,22 @@ function navigateToBreadcrumb(index) {
   browseTo(targetPath)
 }
 
-function downloadDir(dirPath, name) {
+async function downloadDir(dirPath, name) {
   downloading.value = dirPath
-  const url = getDownloadUrl('files', { path: dirPath })
-  const a = document.createElement('a')
-  a.href = url
-  a.download = `${name || 'download'}.zip`
-  document.body.appendChild(a)
-  a.click()
-  document.body.removeChild(a)
-  setTimeout(() => {
-    downloading.value = ''
-  }, 2000)
+  try {
+    const url = await getSecureDownloadUrl('files', { path: dirPath })
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `${name || 'download'}.zip`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+  } catch (err) {
+    console.error('获取下载凭证失败:', err)
+  } finally {
+    setTimeout(() => {
+      downloading.value = ''
+    }, 2000)
+  }
 }
 </script>

@@ -46,6 +46,13 @@ export const authAPI = {
   },
   logout() {
     return api.post('/auth/logout')
+  },
+  loginRecords(page = 1, pageSize = 50) {
+    return api.get('/auth/login-records', { params: { page, pageSize } })
+  },
+  /** 获取短时效下载 token（5分钟有效） */
+  getDownloadToken() {
+    return api.post('/auth/download-token')
   }
 }
 
@@ -67,8 +74,8 @@ export const borgAPI = {
   }
 }
 
-export function getDownloadUrl(type, params) {
-  const token = getToken()
+export function getDownloadUrl(type, params, downloadToken) {
+  const token = downloadToken || getToken()
   if (type === 'files') {
     return `${baseURL}/files/download?path=${encodeURIComponent(params.path)}&token=${encodeURIComponent(token)}`
   } else if (type === 'borg') {
@@ -79,4 +86,12 @@ export function getDownloadUrl(type, params) {
     return url
   }
   return ''
+}
+
+/**
+ * 获取临时下载 token 并生成下载 URL
+ */
+export async function getSecureDownloadUrl(type, params) {
+  const res = await authAPI.getDownloadToken()
+  return getDownloadUrl(type, params, res.data.token)
 }

@@ -96,11 +96,10 @@ router.post('/archives', authMiddleware, async (req, res) => {
   const resolvedRepo = getResolvedRepo(repo)
 
   const borgEnv = { ...process.env }
-  if (passphrase && typeof passphrase === 'string') {
-    borgEnv.BORG_PASSPHRASE = passphrase
-  } else {
-    borgEnv.BORG_UNKNOWN_UNENCRYPTED_REPO_ACCESS_IS_OK = 'yes'
-  }
+  // 始终设置 BORG_PASSPHRASE 以防止 borg 交互式提示密码导致进程挂起
+  borgEnv.BORG_PASSPHRASE =
+    passphrase && typeof passphrase === 'string' ? passphrase : ''
+  borgEnv.BORG_UNKNOWN_UNENCRYPTED_REPO_ACCESS_IS_OK = 'yes'
 
   try {
     const { stdout } = await execFileAsync(
@@ -133,10 +132,13 @@ router.post('/archives', authMiddleware, async (req, res) => {
     res.json({ archives })
   } catch (err) {
     console.error('[Borg] 列出存档失败:', err.message)
+    const stderr = err.stderr || err.message || ''
     // 检查是否密码错误
     if (
-      err.stderr &&
-      (err.stderr.includes('passphrase') || err.stderr.includes('Wrong'))
+      stderr.includes('passphrase') ||
+      stderr.includes('Wrong') ||
+      stderr.includes('PassphraseWrong') ||
+      (stderr.includes('key') && stderr.includes('Enter'))
     ) {
       return res.status(403).json({ error: '仓库密码错误或需要密码' })
     }
@@ -176,11 +178,9 @@ router.get('/download', downloadAuthMiddleware, (req, res) => {
   res.setHeader('Transfer-Encoding', 'chunked')
 
   const borgEnv = { ...process.env }
-  if (passphrase) {
-    borgEnv.BORG_PASSPHRASE = passphrase
-  } else {
-    borgEnv.BORG_UNKNOWN_UNENCRYPTED_REPO_ACCESS_IS_OK = 'yes'
-  }
+  // 始终设置 BORG_PASSPHRASE 以防止交互式提示
+  borgEnv.BORG_PASSPHRASE = passphrase || ''
+  borgEnv.BORG_UNKNOWN_UNENCRYPTED_REPO_ACCESS_IS_OK = 'yes'
 
   const child = spawn(
     'borg',

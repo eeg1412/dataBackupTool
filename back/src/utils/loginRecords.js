@@ -85,3 +85,17 @@ export async function cleanOldRecords() {
     return enqueueSave()
   }
 }
+
+/**
+ * 获取登录记录（按时间倒序，支持分页）
+ */
+export function getRecords(page = 1, pageSize = 50) {
+  const sorted = [...records].sort(
+    (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+  )
+  const total = sorted.length
+  const totalPages = Math.ceil(total / pageSize)
+  const start = (page - 1) * pageSize
+  const items = sorted.slice(start, start + pageSize)
+  return { items, total, page, pageSize, totalPages }
+}
