@@ -105,7 +105,7 @@ router.post('/archives', authMiddleware, async (req, res) => {
   try {
     const { stdout } = await execFileAsync(
       'borg',
-      ['list', '--json', resolvedRepo],
+      ['list', '--json', '--bypass-lock', resolvedRepo],
       {
         timeout: 30000,
         env: borgEnv
@@ -184,7 +184,13 @@ router.get('/download', downloadAuthMiddleware, (req, res) => {
 
   const child = spawn(
     'borg',
-    ['export-tar', '--tar-filter=gzip', `${resolvedRepo}::${archive}`, '-'],
+    [
+      'export-tar',
+      '--bypass-lock',
+      '--tar-filter=gzip',
+      `${resolvedRepo}::${archive}`,
+      '-'
+    ],
     {
       env: borgEnv,
       stdio: ['ignore', 'pipe', 'pipe']
