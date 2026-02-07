@@ -36,17 +36,24 @@ router.get('/download', authMiddleware, async (req, res) => {
 
   try {
     // 验证路径是否在允许的目录下
-    const baseDir =
+    const rawBase =
       type === 'borg' ? process.env.BORG_DIR : process.env.NORMAL_DIR
 
-    if (!baseDir) {
+    if (!rawBase) {
       return res.status(400).json({ message: '目录配置不存在' })
     }
 
-    const normalizedBase = path.normalize(baseDir)
-    const normalizedPath = path.normalize(dirPath)
+    // 统一路径格式，处理 .env 中的转义问题
+    const sanitize = p =>
+      path.normalize(p.replace(/\\/g, '/').replace(/\/+/g, '/'))
 
-    if (!normalizedPath.startsWith(normalizedBase)) {
+    const baseDir = sanitize(rawBase)
+    const normalizedPath = sanitize(dirPath)
+
+    if (!normalizedPath.startsWith(baseDir)) {
+      console.warn(
+        `[Download] Security Block: ${normalizedPath} is not within ${baseDir}`
+      )
       return res.status(403).json({ message: '无权限访问该目录' })
     }
 

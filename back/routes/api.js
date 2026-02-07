@@ -37,22 +37,38 @@ router.get('/directories', authMiddleware, async (req, res) => {
   const { type } = req.query
 
   try {
-    const baseDir =
+    let rawPath =
       type === 'borg' ? process.env.BORG_DIR : process.env.NORMAL_DIR
 
-    if (!baseDir) {
+    if (!rawPath) {
+      console.warn(
+        `[Config] Directory for type "${type}" is not defined in .env`
+      )
       return res.json([])
     }
+
+    // 处理 Windows 路径常见的 .env 转义问题
+    // 1. 如果路径被 dotenv 误解析（例如 "...\test" 中的 \t 变成 tab）
+    // 2. 如果路径包含双反斜杠 \\
+    let baseDir = rawPath.replace(/\\/g, '/').replace(/\/+/g, '/')
+    baseDir = path.normalize(baseDir)
+
+    console.log(
+      `[API] Listing directories in: ${baseDir} (original: ${rawPath})`
+    )
 
     // 检查目录是否存在
     try {
       const stats = await fs.stat(baseDir)
       if (!stats.isDirectory()) {
-        console.log(`Path is not a directory: ${baseDir}`)
+        console.warn(`[API] Path is not a directory: ${baseDir}`)
         return res.json([])
       }
     } catch (err) {
-      console.log(`Directory does not exist: ${baseDir}`)
+      console.error(
+        `[API] Path does not exist or access denied: ${baseDir}`,
+        err.message
+      )
       return res.json([])
     }
 
@@ -63,7 +79,7 @@ router.get('/directories', authMiddleware, async (req, res) => {
 
     res.json(directories)
   } catch (error) {
-    console.error('Error reading directories:', error)
+    console.error('[API] Error reading directories:', error)
     res.json([])
   }
 })

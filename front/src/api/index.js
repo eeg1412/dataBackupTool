@@ -11,12 +11,12 @@ const api = axios.create({
 
 api.interceptors.request.use(config => {
   // 处理 BASE_PATH 前缀
-  if (
-    config.url &&
-    config.url.startsWith('/api') &&
-    !config.url.startsWith(BASE_PATH)
-  ) {
-    config.url = BASE_PATH + config.url
+  // 确保 /api/... 的请求被重定向到 /admin/api/...
+  if (config.url && config.url.startsWith('/api/')) {
+    const cleanBasePath = BASE_PATH.replace(/\/+$/, '')
+    if (!config.url.startsWith(cleanBasePath + '/')) {
+      config.url = cleanBasePath + config.url
+    }
   }
 
   const token = localStorage.getItem('token')

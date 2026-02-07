@@ -19,47 +19,32 @@ app.use((req, res, next) => {
 app.use(express.json())
 app.use(express.urlencoded({ extended: true }))
 
-// 创建路由器
-const router = express.Router()
-
-// API路由
-// 在 Express 5 中，为了确保前缀匹配工作正常，我们可以使用通配符 (.*)
-// 或者嵌套多个路径。对于 .use 来说，字符串前缀通常仍然有效，但为了万无一失：
-router.use('/api', authRoutes)
-router.use('/api', apiRoutes)
-router.use('/api', downloadRoutes)
-
-// 静态文件服务（前端）
+// 静态文件服务 - 应该在 API 之前还是之后？通常在 API 之后或通过特定路径。
+// 为了配合 BASE_PATH，我们将所有内容直接挂载在 app 上。
 const frontDir = path.join(__dirname, 'front')
+
+// API 路由 - 直接挂载在 app 上，避免嵌套 router 的不确定性
+app.use(`${BASE_PATH}/api`, authRoutes)
+app.use(`${BASE_PATH}/api`, apiRoutes)
+app.use(`${BASE_PATH}/api`, downloadRoutes)
+
+// 静态文件服务
 try {
-  router.use(express.static(frontDir))
+  app.use(BASE_PATH, express.static(frontDir))
 } catch (err) {
   console.error('Error serving static files:', err.message)
 }
 
-// SPA路由支持 - Express 5 不再支持之前的正则表达式字符串。
-// 使用 RegExp 对象的字面量形式是最稳健的跨版本方案
-router.get(/^(?!\/api).*$/, (req, res) => {
-  try {
-    res.sendFile(path.join(frontDir, 'index.html'))
-  } catch (err) {
-    res.status(500).json({ error: err.message })
-  }
+// SPA 路由支持 - 在 Express 5 中，正则表达式字面量是安全的
+// 捕获所有不以 /api 开头的请求
+app.get(new RegExp(`^${BASE_PATH}(?!/api).*$`), (req, res) => {
+  res.sendFile(path.join(frontDir, 'index.html'))
 })
 
-// 将路由挂载到BASE_PATH下
-// 显式支持 /admin 和 /admin/*
-app.use(BASE_PATH, router)
-
-// 对于不匹配BASE_PATH的请求，返回404，并打印详细信息用于调试
+// 对于不匹配的所有请求，返回 404
 app.use((req, res) => {
-  console.warn(`[404] No match for: ${req.method} ${req.url}`)
-  res.status(404).json({
-    error: 'Not Found',
-    path: req.url,
-    method: req.method,
-    basePath: BASE_PATH
-  })
+  console.warn(`[404] ${req.method} ${req.url}`)
+  res.status(404).json({ error: 'Not Found', path: req.url })
 })
 
 const server = app.listen(PORT, () => {
