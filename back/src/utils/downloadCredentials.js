@@ -15,7 +15,7 @@ import crypto from 'crypto'
 const credentialStore = new Map()
 
 const ID_LENGTH = 4
-const PASSWORD_LENGTH = 16
+const PASSWORD_LENGTH = 128
 const TTL_MS = 5 * 60 * 1000 // 5 分钟
 const CHARSET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'
 
