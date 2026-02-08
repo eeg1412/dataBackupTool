@@ -332,10 +332,13 @@ router.get('/download', (req, res) => {
   child.stdout.once('data', firstChunk => {
     headersSent = true
 
+    const repoName = path.basename(resolvedRepo)
+    const fileName = `${repoName}_${archive}`
+
     // 使用 RFC 5987 编码支持中文文件名
-    const encodedName = encodeURIComponent(archive)
+    const encodedName = encodeURIComponent(fileName)
     // ASCII fallback: 保留 ASCII 可打印字符
-    const asciiFallback = archive.replace(/[^\x20-\x7E]/g, '_')
+    const asciiFallback = fileName.replace(/[^\x20-\x7E]/g, '_')
 
     res.setHeader('Content-Type', 'application/gzip')
     res.setHeader(
