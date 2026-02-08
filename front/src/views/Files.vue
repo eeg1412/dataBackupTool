@@ -159,7 +159,7 @@
                 :disabled="downloading === dir.path"
                 class="flex-1 px-3 py-1.5 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors disabled:opacity-50"
               >
-                {{ downloading === dir.path ? '准备中...' : '下载 ZIP' }}
+                {{ downloading === dir.path ? '准备中...' : '下载 备份' }}
               </button>
             </div>
           </div>
