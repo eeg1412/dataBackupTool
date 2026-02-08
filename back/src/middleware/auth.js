@@ -7,7 +7,7 @@ export function generateToken(payload, remember = false) {
 }
 
 /**
- * 生成短时效下载专用 token（1分钟有效）
+ * 生成短时效下载专用 token（2分钟有效）
  */
 export function generateDownloadToken(payload) {
   return jwt.sign(
@@ -15,7 +15,7 @@ export function generateDownloadToken(payload) {
     getPrivateKey(),
     {
       algorithm: 'RS256',
-      expiresIn: '1m'
+      expiresIn: '2m'
     }
   )
 }
