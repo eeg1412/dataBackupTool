@@ -127,7 +127,10 @@ router.get('/download', downloadAuthMiddleware, async (req, res) => {
   }
 
   const dirName = path.basename(requestedPath) || 'download'
-  const safeFileName = dirName.replace(/[^a-zA-Z0-9_\-.\u4e00-\u9fff]/g, '_')
+
+  // 使用 RFC 5987 编码支持中文文件名
+  const encodedName = encodeURIComponent(dirName)
+  const asciiFallback = dirName.replace(/[^\x20-\x7E]/g, '_')
 
   // Telegram 通知
   const ip = getClientIP(req)
@@ -138,9 +141,12 @@ router.get('/download', downloadAuthMiddleware, async (req, res) => {
   res.setHeader('Content-Type', 'application/zip')
   res.setHeader(
     'Content-Disposition',
-    `attachment; filename="${encodeURIComponent(safeFileName)}.zip"; filename*=UTF-8''${encodeURIComponent(safeFileName)}.zip`
+    `attachment; filename="${asciiFallback}.zip"; filename*=UTF-8''${encodedName}.zip`
   )
   res.setHeader('Transfer-Encoding', 'chunked')
+  // 禁用代理缓冲确保流式传输
+  res.setHeader('X-Accel-Buffering', 'no')
+  res.setHeader('Cache-Control', 'no-cache')
 
   try {
     // 动态导入 @zip.js/zip.js
@@ -156,7 +162,12 @@ router.get('/download', downloadAuthMiddleware, async (req, res) => {
     // 处理客户端断开连接
     let aborted = false
     req.on('close', () => {
-      aborted = true
+      if (!aborted) {
+        aborted = true
+        console.log('[Files] 客户端断开，清理 ZIP 流')
+        nodeStream.unpipe(res)
+        nodeStream.destroy()
+      }
     })
 
     // 递归添加文件到 ZIP

@@ -461,13 +461,13 @@ async function downloadArchive(repo, archiveIndex) {
   const key = `${repo.path}::${archiveIndex}`
   downloading.value = key
   try {
-    // 通过 POST 接口传递 repo + 序号 + 密码，后端返回含加密信息的短效 token
+    // 通过 POST 接口传递 repo + 序号 + 密码，后端返回下载凭证
     const res = await borgAPI.prepareDownload(
       repo.path,
       archiveIndex,
       repo.passphrase || ''
     )
-    const url = getBorgDownloadUrl(res.data.token)
+    const url = getBorgDownloadUrl(res.data)
     const archiveName = res.data.archiveName || `archive-${archiveIndex}`
     const a = document.createElement('a')
     a.href = url

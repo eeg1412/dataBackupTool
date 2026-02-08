@@ -72,7 +72,7 @@ export const borgAPI = {
   archives(repo, passphrase = '') {
     return api.post('/borg/archives', { repo, passphrase })
   },
-  /** 准备下载：传入 repo + 存档序号 + 密码，返回含加密信息的短效 token */
+  /** 准备下载：传入 repo + 存档序号 + 密码 */
   prepareDownload(repo, archiveIndex, passphrase = '') {
     return api.post('/borg/prepare-download', {
       repo,
@@ -82,13 +82,22 @@ export const borgAPI = {
   }
 }
 
+/**
+ * 根据 prepare-download 返回的模式生成 Borg 下载 URL
+ * credential 模式：?id=xxx&key=xxx
+ * token 模式：?token=xxx
+ */
+export function getBorgDownloadUrl(prepareData) {
+  if (prepareData.mode === 'credential') {
+    return `${baseURL}/borg/download?id=${encodeURIComponent(prepareData.id)}&key=${encodeURIComponent(prepareData.password)}`
+  } else {
+    return `${baseURL}/borg/download?token=${encodeURIComponent(prepareData.token)}`
+  }
+}
+
 export function getFileDownloadUrl(filePath, downloadToken) {
   const token = downloadToken || getToken()
   return `${baseURL}/files/download?path=${encodeURIComponent(filePath)}&token=${encodeURIComponent(token)}`
-}
-
-export function getBorgDownloadUrl(borgToken) {
-  return `${baseURL}/borg/download?token=${encodeURIComponent(borgToken)}`
 }
 
 /**

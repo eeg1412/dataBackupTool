@@ -5,11 +5,15 @@ import path from 'path'
 import { config } from '../config.js'
 import {
   authMiddleware,
-  generateBorgDownloadToken,
-  verifyToken
+  verifyToken,
+  generateDownloadToken
 } from '../middleware/auth.js'
 import { sendTelegramMessage } from '../utils/telegram.js'
 import { getClientIP } from '../utils/ip.js'
+import {
+  storeCredential,
+  consumeCredential
+} from '../utils/downloadCredentials.js'
 
 function escapeHTML(str) {
   return String(str)
@@ -147,9 +151,9 @@ router.post('/archives', authMiddleware, async (req, res) => {
 })
 
 /**
- * 准备下载：校验参数，将 repo + archiveName + passphrase 编码进短效 JWT
- * 前端先 POST 此接口拿到 token，再用 GET /download?token=xxx 下载
- * 这样 URL 中不会暴露密码和存档名
+ * 准备下载：校验参数，为有密码的仓库生成加密凭证，为无密码的仓库直接返回信息
+ * 有密码：返回 { id, password, archiveName } — 前端用 id+password 下载
+ * 无密码：返回 { token (download token), archiveName } — 前端用 token 下载
  */
 router.post('/prepare-download', authMiddleware, async (req, res) => {
   const { repo, archiveIndex, passphrase } = req.body || {}
@@ -201,41 +205,88 @@ router.post('/prepare-download', authMiddleware, async (req, res) => {
     }
 
     const archiveName = archives[archiveIndex].name
+    const hasPassphrase = !!(passphrase && passphrase.length > 0)
 
-    // 将信息编码进短效 JWT
-    const token = generateBorgDownloadToken({
-      username: req.user.username,
-      repo: resolvedRepo,
-      archiveName,
-      passphrase: passphrase || ''
-    })
+    if (hasPassphrase) {
+      // 有密码的仓库：生成加密凭证
+      const { id, password } = storeCredential({
+        username: req.user.username,
+        repo: resolvedRepo,
+        archiveName,
+        passphrase
+      })
 
-    res.json({ token, archiveName })
+      res.json({
+        mode: 'credential',
+        id,
+        password,
+        archiveName
+      })
+    } else {
+      // 无密码的仓库：生成 download token
+      const token = generateDownloadToken({
+        username: req.user.username,
+        purpose: 'borg-download',
+        repo: resolvedRepo,
+        archiveName
+      })
+
+      res.json({
+        mode: 'token',
+        token,
+        archiveName
+      })
+    }
   } catch (err) {
     console.error('[Borg] prepare-download 失败:', err.message)
     if (err.stderr) {
       console.error('[Borg] prepare-download stderr:', err.stderr)
+    }
+    const stderr = err.stderr || err.message || ''
+    if (
+      stderr.includes('passphrase') ||
+      stderr.includes('Wrong') ||
+      stderr.includes('PassphraseWrong')
+    ) {
+      return res.status(403).json({ error: '仓库密码错误' })
     }
     res.status(500).json({ error: '准备下载失败' })
   }
 })
 
 /**
- * 流式导出并下载存档（使用 borg export-tar，不占用磁盘空间）
- * token 中已包含所有所需信息（repo、archiveName、passphrase），URL 不再暴露敏感数据
+ * 流式导出并下载存档（使用 borg export-tar）
+ *
+ * 两种认证方式：
+ * 1. 有密码仓库：?id=xxx&key=xxx （从内存凭证缓存中获取信息）
+ * 2. 无密码仓库：?token=xxx （从 JWT 中获取信息）
  */
 router.get('/download', (req, res) => {
-  const tokenStr = req.query.token
-  if (!tokenStr) {
+  let resolvedRepo, archive, passphrase
+
+  const { id, key, token: tokenStr } = req.query
+
+  if (id && key) {
+    // 模式1：加密凭证（有密码的仓库）
+    const credential = consumeCredential(id, key)
+    if (!credential) {
+      return res.status(401).json({ error: '下载凭证无效、已过期或已使用' })
+    }
+    resolvedRepo = credential.repo
+    archive = credential.archiveName
+    passphrase = credential.passphrase || ''
+  } else if (tokenStr) {
+    // 模式2：JWT token（无密码仓库）
+    const payload = verifyToken(tokenStr)
+    if (!payload || payload.purpose !== 'borg-download') {
+      return res.status(401).json({ error: '下载凭证无效或已过期' })
+    }
+    resolvedRepo = payload.repo
+    archive = payload.archiveName
+    passphrase = ''
+  } else {
     return res.status(401).json({ error: '需要下载凭证' })
   }
-
-  const payload = verifyToken(tokenStr)
-  if (!payload || payload.purpose !== 'borg-download') {
-    return res.status(401).json({ error: '下载凭证无效或已过期' })
-  }
-
-  const { repo: resolvedRepo, archiveName: archive, passphrase } = payload
 
   if (process.platform !== 'linux') {
     return res.status(400).json({ error: 'Borg 仅在 Linux 上可用' })
@@ -245,11 +296,8 @@ router.get('/download', (req, res) => {
     return res.status(403).json({ error: '无权访问此仓库' })
   }
 
-  const safeArchiveName = archive.replace(/[^a-zA-Z0-9._\-]/g, '_')
-
   const borgEnv = { ...process.env }
-  // 始终设置 BORG_PASSPHRASE 以防止交互式提示
-  borgEnv.BORG_PASSPHRASE = passphrase || ''
+  borgEnv.BORG_PASSPHRASE = passphrase
   borgEnv.BORG_UNKNOWN_UNENCRYPTED_REPO_ACCESS_IS_OK = 'yes'
   borgEnv.BORG_RELOCATED_REPO_ACCESS_IS_OK = 'yes'
 
@@ -272,6 +320,7 @@ router.get('/download', (req, res) => {
 
   let stderrChunks = []
   let headersSent = false
+  let childExited = false
 
   child.stderr.on('data', data => {
     const msg = data.toString()
@@ -279,15 +328,25 @@ router.get('/download', (req, res) => {
     console.error(`[Borg] export-tar stderr: ${msg}`)
   })
 
-  // 等待第一块 stdout 数据再发送响应头，确保 borg 正常启动
+  // 等待第一块 stdout 数据再发送响应头
   child.stdout.once('data', firstChunk => {
     headersSent = true
+
+    // 使用 RFC 5987 编码支持中文文件名
+    const encodedName = encodeURIComponent(archive)
+    // ASCII fallback: 保留 ASCII 可打印字符
+    const asciiFallback = archive.replace(/[^\x20-\x7E]/g, '_')
+
     res.setHeader('Content-Type', 'application/gzip')
     res.setHeader(
       'Content-Disposition',
-      `attachment; filename="${encodeURIComponent(safeArchiveName)}.tar.gz"; filename*=UTF-8''${encodeURIComponent(safeArchiveName)}.tar.gz`
+      `attachment; filename="${asciiFallback}.tar.gz"; filename*=UTF-8''${encodedName}.tar.gz`
     )
     res.setHeader('Transfer-Encoding', 'chunked')
+    // 禁用代理缓冲确保流式传输
+    res.setHeader('X-Accel-Buffering', 'no')
+    res.setHeader('Cache-Control', 'no-cache')
+
     res.write(firstChunk)
     child.stdout.pipe(res)
   })
@@ -306,6 +365,7 @@ router.get('/download', (req, res) => {
   })
 
   child.on('close', code => {
+    childExited = true
     const allStderr = stderrChunks.join('')
     console.log(
       `[Borg] export-tar 进程退出, code=${code}, stderr=${allStderr || '(empty)'}`
@@ -318,16 +378,25 @@ router.get('/download', (req, res) => {
             : `导出存档失败 (exit code ${code}): ${allStderr.slice(0, 200)}`
         res.status(500).json({ error: errMsg })
       } else {
-        // 响应头已发送，只能中断连接
         res.end()
       }
     }
   })
 
-  // 客户端断开时终止子进程
+  // 客户端断开时确保清理子进程和流
   req.on('close', () => {
-    if (!child.killed) {
+    if (!childExited && !child.killed) {
+      console.log('[Borg] 客户端断开，终止 export-tar 进程')
+      child.stdout.unpipe(res)
+      child.stdout.destroy()
+      child.stderr.destroy()
       child.kill('SIGTERM')
+      // 给一个宽限期，如果进程还没退出就强制杀死
+      setTimeout(() => {
+        if (!child.killed) {
+          child.kill('SIGKILL')
+        }
+      }, 3000)
     }
   })
 })
