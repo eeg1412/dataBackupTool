@@ -120,7 +120,7 @@ router.post('/logout', (_req, res) => {
 })
 
 /**
- * 生成短时效下载 token（5分钟有效），避免长期 token 暴露在 URL 中
+ * 生成短时效下载 token（1分钟有效），避免长期 token 暴露在 URL 中
  */
 router.post('/download-token', authMiddleware, (req, res) => {
   const token = generateDownloadToken({ username: req.user.username })

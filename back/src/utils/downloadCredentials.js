@@ -4,9 +4,9 @@ import crypto from 'crypto'
  * 安全下载凭证缓存
  *
  * 流程：
- * 1. prepare-download 时生成 4 位随机 ID 和 16 位随机密码
+ * 1. prepare-download 时生成 4 位随机 ID 和 128 位随机密码
  * 2. 用随机密码 AES-256-GCM 加密仓库密码 + 仓库路径 + 存档名等信息
- * 3. 将加密后的数据以 ID 为键缓存到内存，5 分钟后自动销毁
+ * 3. 将加密后的数据以 ID 为键缓存到内存，1 分钟后自动销毁
  * 4. 前端下载 URL 只携带 ID + 随机密码
  * 5. 后端用 ID 查找缓存，用随机密码解密出敏感信息，然后立即销毁该缓存条目
  */
@@ -16,7 +16,7 @@ const credentialStore = new Map()
 
 const ID_LENGTH = 4
 const PASSWORD_LENGTH = 128
-const TTL_MS = 5 * 60 * 1000 // 5 分钟
+const TTL_MS = 1 * 60 * 1000 // 1 分钟
 const CHARSET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'
 
 /**

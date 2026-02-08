@@ -50,7 +50,7 @@ export const authAPI = {
   loginRecords(page = 1, pageSize = 50) {
     return api.get('/auth/login-records', { params: { page, pageSize } })
   },
-  /** 获取短时效下载 token（5分钟有效） */
+  /** 获取短时效下载 token（1分钟有效） */
   getDownloadToken() {
     return api.post('/auth/download-token')
   }
