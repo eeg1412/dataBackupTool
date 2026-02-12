@@ -144,7 +144,7 @@
               <button
                 @click.stop="downloadLatestArchive(repo)"
                 :disabled="downloading === `${repo.path}::latest`"
-                class="mt-2 w-full px-3 py-1.5 text-xs sm:text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors disabled:opacity-50"
+                class="mt-2 w-full px-3 py-1.5 text-xs sm:text-sm border border-blue-600 text-blue-600 dark:text-blue-400 rounded-md hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors disabled:opacity-50"
               >
                 {{
                   downloading === `${repo.path}::latest`
