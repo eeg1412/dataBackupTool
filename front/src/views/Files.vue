@@ -1,12 +1,24 @@
 <template>
   <Layout>
     <div class="space-y-4 sm:space-y-6">
-      <div class="flex items-center justify-between">
+      <div class="flex items-center justify-between flex-wrap gap-2">
         <h2
           class="text-lg sm:text-xl font-semibold text-gray-900 dark:text-white"
         >
           文件管理
         </h2>
+        <button
+          v-if="!currentPath && directories.length > 0"
+          @click="downloadAllDirectories"
+          :disabled="!!downloading || batchDownloading"
+          class="px-3 py-1.5 text-xs sm:text-sm bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors disabled:opacity-50 whitespace-nowrap"
+        >
+          {{
+            batchDownloading
+              ? `批量下载中 (${batchDownloadProgress}/${batchDownloadTotal})`
+              : '一键下载全部'
+          }}
+        </button>
       </div>
 
       <div v-if="loading" class="flex justify-center py-12">
@@ -308,6 +320,9 @@ const currentPath = ref('')
 const items = ref([])
 const downloading = ref('')
 const pathHistory = ref([])
+const batchDownloading = ref(false)
+const batchDownloadProgress = ref(0)
+const batchDownloadTotal = ref(0)
 
 const currentDirName = computed(() => {
   if (!currentPath.value) return ''
@@ -423,10 +438,41 @@ async function downloadDir(dirPath, name) {
     document.body.removeChild(a)
   } catch (err) {
     console.error('获取下载凭证失败:', err)
+    alert('下载失败: ' + (err.response?.data?.error || err.message))
   } finally {
     setTimeout(() => {
       downloading.value = ''
     }, 2000)
   }
+}
+
+async function downloadAllDirectories() {
+  if (batchDownloading.value) return
+  if (!confirm(`确定要依次下载所有 ${directories.value.length} 个目录吗？`))
+    return
+
+  batchDownloading.value = true
+  batchDownloadProgress.value = 0
+  batchDownloadTotal.value = directories.value.length
+
+  for (let i = 0; i < directories.value.length; i++) {
+    const dir = directories.value[i]
+    batchDownloadProgress.value = i + 1
+
+    try {
+      await downloadDir(dir.path, dir.name)
+      // 等待一小段时间避免浏览器同时下载太多
+      await new Promise(resolve => setTimeout(resolve, 1500))
+    } catch (err) {
+      console.error(`下载目录 ${dir.name} 失败:`, err)
+      if (!confirm(`下载 ${dir.name} 失败，是否继续下载其他目录？`)) {
+        break
+      }
+    }
+  }
+
+  batchDownloading.value = false
+  batchDownloadProgress.value = 0
+  batchDownloadTotal.value = 0
 }
 </script>

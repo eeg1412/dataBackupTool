@@ -1,12 +1,24 @@
 <template>
   <Layout>
     <div class="space-y-4 sm:space-y-6">
-      <div class="flex items-center justify-between">
+      <div class="flex items-center justify-between flex-wrap gap-2">
         <h2
           class="text-lg sm:text-xl font-semibold text-gray-900 dark:text-white"
         >
           Borg 备份
         </h2>
+        <button
+          v-if="available && repos.length > 0"
+          @click="downloadAllReposWithPassword"
+          :disabled="!!downloading || batchDownloading"
+          class="px-3 py-1.5 text-xs sm:text-sm bg-purple-600 text-white rounded-md hover:bg-purple-700 transition-colors disabled:opacity-50 whitespace-nowrap"
+        >
+          {{
+            batchDownloading
+              ? `批量下载中 (${batchDownloadProgress}/${batchDownloadTotal})`
+              : '一键下载全部'
+          }}
+        </button>
       </div>
 
       <div v-if="loading" class="flex justify-center py-12">
@@ -171,33 +183,52 @@
                 该仓库没有存档
               </div>
 
-              <div v-else class="divide-y divide-gray-100 dark:divide-gray-700">
+              <div v-else>
+                <!-- 下载最新备份按钮 -->
                 <div
-                  v-for="(archive, idx) in repo.archives"
-                  :key="archive.name"
-                  class="flex items-center justify-between px-4 sm:px-5 py-2.5 sm:py-3 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors"
+                  class="px-4 sm:px-5 py-2.5 bg-gray-50 dark:bg-gray-800/50 border-b border-gray-100 dark:border-gray-700"
                 >
-                  <div class="min-w-0 flex-1">
-                    <p
-                      class="text-xs sm:text-sm font-medium text-gray-900 dark:text-white truncate"
-                    >
-                      {{ archive.name }}
-                    </p>
-                    <p class="text-xs text-gray-500 dark:text-gray-400">
-                      {{ formatDate(archive.start) }}
-                    </p>
-                  </div>
                   <button
-                    @click="downloadArchive(repo, idx)"
-                    :disabled="downloading === `${repo.path}::${idx}`"
-                    class="ml-2 sm:ml-3 px-2.5 sm:px-3 py-1 sm:py-1.5 text-xs sm:text-sm bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors disabled:opacity-50 shrink-0"
+                    @click="downloadLatestArchive(repo)"
+                    :disabled="downloading === `${repo.path}::latest`"
+                    class="w-full sm:w-auto px-3 py-1.5 text-xs sm:text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors disabled:opacity-50"
                   >
                     {{
-                      downloading === `${repo.path}::${idx}`
+                      downloading === `${repo.path}::latest`
                         ? '准备中...'
-                        : '下载'
+                        : '下载最新备份'
                     }}
                   </button>
+                </div>
+
+                <div class="divide-y divide-gray-100 dark:divide-gray-700">
+                  <div
+                    v-for="(archive, idx) in repo.archives"
+                    :key="archive.name"
+                    class="flex items-center justify-between px-4 sm:px-5 py-2.5 sm:py-3 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors"
+                  >
+                    <div class="min-w-0 flex-1">
+                      <p
+                        class="text-xs sm:text-sm font-medium text-gray-900 dark:text-white truncate"
+                      >
+                        {{ archive.name }}
+                      </p>
+                      <p class="text-xs text-gray-500 dark:text-gray-400">
+                        {{ formatDate(archive.start) }}
+                      </p>
+                    </div>
+                    <button
+                      @click="downloadArchive(repo, idx)"
+                      :disabled="downloading === `${repo.path}::${idx}`"
+                      class="ml-2 sm:ml-3 px-2.5 sm:px-3 py-1 sm:py-1.5 text-xs sm:text-sm bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors disabled:opacity-50 shrink-0"
+                    >
+                      {{
+                        downloading === `${repo.path}::${idx}`
+                          ? '准备中...'
+                          : '下载'
+                      }}
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>
@@ -281,7 +312,8 @@ import Layout from '../components/Layout.vue'
 import { borgAPI, getBorgDownloadUrl } from '../api'
 import {
   getPassword,
-  savePassword as savePasswordToDB
+  savePassword as savePasswordToDB,
+  getAllPasswords
 } from '../utils/borgPasswordDB'
 
 const loading = ref(true)
@@ -290,6 +322,9 @@ const available = ref(true)
 const unavailableMessage = ref('')
 const repos = ref([])
 const downloading = ref('')
+const batchDownloading = ref(false)
+const batchDownloadProgress = ref(0)
+const batchDownloadTotal = ref(0)
 
 // Password dialog
 const showPasswordDialog = ref(false)
@@ -486,11 +521,131 @@ async function downloadArchive(repo, archiveIndex) {
   }
 }
 
+async function downloadLatestArchive(repo) {
+  if (!repo.archives || repo.archives.length === 0) {
+    alert('该仓库没有存档')
+    return
+  }
+  const key = `${repo.path}::latest`
+  downloading.value = key
+  try {
+    // 下载第一个（最新）存档
+    const res = await borgAPI.prepareDownload(
+      repo.path,
+      0,
+      repo.passphrase || ''
+    )
+    const url = getBorgDownloadUrl(res.data)
+    const archiveName = res.data.archiveName || 'latest-archive'
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `${archiveName}.tar.gz`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+  } catch (err) {
+    const msg = err.response?.data?.error || '准备下载失败'
+    alert(msg)
+    console.error('下载最新备份失败:', err)
+  } finally {
+    setTimeout(() => {
+      downloading.value = ''
+    }, 2000)
+  }
+}
+
 async function retryWithPassword(repo) {
   const pwd = await promptPassword(repo, '')
   if (pwd !== null) {
     repo.archives = null
     await loadArchives(repo)
+  }
+}
+
+async function downloadAllReposWithPassword() {
+  if (batchDownloading.value) return
+
+  try {
+    // 获取所有已保存密码的仓库
+    const allPasswords = await getAllPasswords()
+    const reposWithPassword = repos.value.filter(repo =>
+      allPasswords.some(p => p.repoPath === repo.path)
+    )
+
+    if (reposWithPassword.length === 0) {
+      alert('没有已保存密码的仓库')
+      return
+    }
+
+    if (
+      !confirm(
+        `找到 ${reposWithPassword.length} 个已保存密码的仓库，确定要依次下载每个仓库的最新备份吗？`
+      )
+    ) {
+      return
+    }
+
+    batchDownloading.value = true
+    batchDownloadProgress.value = 0
+    batchDownloadTotal.value = reposWithPassword.length
+
+    for (let i = 0; i < reposWithPassword.length; i++) {
+      const repo = reposWithPassword[i]
+      batchDownloadProgress.value = i + 1
+
+      try {
+        // 获取保存的密码
+        const password = await getPassword(repo.path)
+        if (!password) {
+          console.error(`仓库 ${repo.name} 没有保存的密码`)
+          continue
+        }
+
+        // 获取存档列表
+        const archivesRes = await borgAPI.archives(repo.path, password)
+        if (
+          !archivesRes.data.archives ||
+          archivesRes.data.archives.length === 0
+        ) {
+          console.error(`仓库 ${repo.name} 没有存档`)
+          continue
+        }
+
+        // 下载最新备份（第一个）
+        const res = await borgAPI.prepareDownload(repo.path, 0, password)
+        const url = getBorgDownloadUrl(res.data)
+        const archiveName = res.data.archiveName || `${repo.name}-latest`
+
+        const a = document.createElement('a')
+        a.href = url
+        a.download = `${archiveName}.tar.gz`
+        document.body.appendChild(a)
+        a.click()
+        document.body.removeChild(a)
+
+        // 等待一小段时间避免浏览器同时下载太多
+        await new Promise(resolve => setTimeout(resolve, 2000))
+      } catch (err) {
+        console.error(`下载仓库 ${repo.name} 失败:`, err)
+        const shouldContinue = confirm(
+          `下载仓库 ${repo.name} 失败：${err.response?.data?.error || err.message}\n\n是否继续下载其他仓库？`
+        )
+        if (!shouldContinue) {
+          break
+        }
+      }
+    }
+
+    alert(
+      `批量下载完成！成功: ${batchDownloadProgress.value}/${batchDownloadTotal.value}`
+    )
+  } catch (err) {
+    console.error('批量下载失败:', err)
+    alert('批量下载失败: ' + err.message)
+  } finally {
+    batchDownloading.value = false
+    batchDownloadProgress.value = 0
+    batchDownloadTotal.value = 0
   }
 }
 </script>

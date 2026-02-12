@@ -356,6 +356,7 @@ router.get('/download', (req, res) => {
 
   // Telegram 通知
   const ip = getClientIP(req)
+  const downloadStartTime = Date.now()
   sendTelegramMessage(
     `⬇️ <b>下载 Borg 存档</b>\n仓库: <code>${escapeHTML(path.basename(resolvedRepo))}</code>\n存档: <code>${escapeHTML(archive)}</code>\nIP: <code>${escapeHTML(ip)}</code>\n时间: ${new Date().toLocaleString('zh-CN')}`
   ).catch(() => {})
@@ -374,6 +375,11 @@ router.get('/download', (req, res) => {
       `[Borg] export-tar 进程退出, code=${code}, stderr=${allStderr || '(empty)'}`
     )
     if (code !== 0) {
+      // 下载失败通知
+      sendTelegramMessage(
+        `❌ <b>Borg 存档下载失败</b>\n仓库: <code>${escapeHTML(path.basename(resolvedRepo))}</code>\n存档: <code>${escapeHTML(archive)}</code>\n错误码: ${code}\nIP: <code>${escapeHTML(ip)}</code>`
+      ).catch(() => {})
+
       if (!headersSent) {
         const errMsg =
           allStderr.includes('passphrase') || allStderr.includes('Wrong')
@@ -383,6 +389,12 @@ router.get('/download', (req, res) => {
       } else {
         res.end()
       }
+    } else {
+      // 下载成功通知
+      const duration = ((Date.now() - downloadStartTime) / 1000).toFixed(1)
+      sendTelegramMessage(
+        `✅ <b>Borg 存档下载完成</b>\n仓库: <code>${escapeHTML(path.basename(resolvedRepo))}</code>\n存档: <code>${escapeHTML(archive)}</code>\n耗时: ${duration}秒\nIP: <code>${escapeHTML(ip)}</code>`
+      ).catch(() => {})
     }
   })
 

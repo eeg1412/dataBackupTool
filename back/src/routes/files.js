@@ -134,6 +134,7 @@ router.get('/download', downloadAuthMiddleware, async (req, res) => {
 
   // Telegram 通知
   const ip = getClientIP(req)
+  const downloadStartTime = Date.now()
   sendTelegramMessage(
     `⬇️ <b>下载文件目录</b>\n目录: <code>${escapeHTML(requestedPath)}</code>\nIP: <code>${escapeHTML(ip)}</code>\n时间: ${new Date().toLocaleString('zh-CN')}`
   ).catch(() => {})
@@ -204,8 +205,19 @@ router.get('/download', downloadAuthMiddleware, async (req, res) => {
 
     await addDirectory(requestedPath, '')
     await zipWriter.close()
+
+    // 下载成功通知
+    const duration = ((Date.now() - downloadStartTime) / 1000).toFixed(1)
+    sendTelegramMessage(
+      `✅ <b>文件目录下载完成</b>\n目录: <code>${escapeHTML(requestedPath)}</code>\n耗时: ${duration}秒\nIP: <code>${escapeHTML(ip)}</code>`
+    ).catch(() => {})
   } catch (err) {
     console.error('[Files] ZIP 打包失败:', err.message)
+
+    // 下载失败通知
+    sendTelegramMessage(
+      `❌ <b>文件目录下载失败</b>\n目录: <code>${escapeHTML(requestedPath)}</code>\n错误: ${escapeHTML(err.message)}\nIP: <code>${escapeHTML(ip)}</code>`
+    ).catch(() => {})
     if (!res.headersSent) {
       res.status(500).json({ error: '打包下载失败' })
     } else {
