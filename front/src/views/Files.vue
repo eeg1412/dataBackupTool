@@ -44,10 +44,10 @@
       </div>
 
       <div
-        v-else-if="error"
+        v-else-if="errorMsg"
         class="bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-400 p-4 rounded-lg text-sm sm:text-base"
       >
-        {{ error }}
+        {{ errorMsg }}
       </div>
 
       <template v-else>
@@ -311,10 +311,13 @@
 import { ref, computed, onMounted } from 'vue'
 import Layout from '../components/Layout.vue'
 import { filesAPI, getSecureFileDownloadUrl } from '../api'
+import { useToast } from '../composables/useToast'
+
+const { success, error, info, warning } = useToast()
 
 const loading = ref(true)
 const browseLoading = ref(false)
-const error = ref('')
+const errorMsg = ref('')
 const directories = ref([])
 const currentPath = ref('')
 const items = ref([])
@@ -359,12 +362,12 @@ onMounted(async () => {
 
 async function loadDirectories() {
   loading.value = true
-  error.value = ''
+  errorMsg.value = ''
   try {
     const res = await filesAPI.list()
     directories.value = res.data.directories
   } catch (err) {
-    error.value = err.response?.data?.error || '加载目录列表失败'
+    errorMsg.value = err.response?.data?.error || '加载目录列表失败'
   } finally {
     loading.value = false
   }
@@ -381,7 +384,7 @@ async function browseTo(dirPath) {
     items.value = res.data.items
   } catch (err) {
     items.value = []
-    error.value = err.response?.data?.error || '无法读取目录'
+    errorMsg.value = err.response?.data?.error || '无法读取目录'
   } finally {
     browseLoading.value = false
   }
@@ -438,7 +441,7 @@ async function downloadDir(dirPath, name) {
     document.body.removeChild(a)
   } catch (err) {
     console.error('获取下载凭证失败:', err)
-    alert('下载失败: ' + (err.response?.data?.error || err.message))
+    errorMsg.value = '下载失败: ' + (err.response?.data?.error || err.message)
   } finally {
     setTimeout(() => {
       downloading.value = ''
@@ -471,6 +474,10 @@ async function downloadAllDirectories() {
     }
   }
 
+  success(
+    `批量下载完成！已完成: ${batchDownloadProgress.value}/${batchDownloadTotal.value}`,
+    4000
+  )
   batchDownloading.value = false
   batchDownloadProgress.value = 0
   batchDownloadTotal.value = 0

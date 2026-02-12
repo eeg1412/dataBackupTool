@@ -138,6 +138,7 @@
     <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-8">
       <slot />
     </main>
+    <Toast />
   </div>
 </template>
 
@@ -146,6 +147,7 @@ import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { authAPI } from '../api'
 import { removeToken } from '../utils/auth'
+import Toast from './Toast.vue'
 
 const router = useRouter()
 const isDark = ref(document.documentElement.classList.contains('dark'))

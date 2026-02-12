@@ -68,10 +68,10 @@
       </div>
 
       <div
-        v-else-if="error"
+        v-else-if="errorMsgPage"
         class="bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-400 p-4 rounded-lg text-sm sm:text-base"
       >
-        {{ error }}
+        {{ errorMsgPage }}
       </div>
 
       <template v-else>
@@ -88,54 +88,71 @@
             :key="repo.path"
             class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden"
           >
-            <button
-              @click="toggleRepo(repo)"
-              class="w-full px-4 sm:px-5 py-3 sm:py-4 flex items-center justify-between hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors"
-            >
-              <div class="flex items-center space-x-3 min-w-0">
-                <div
-                  class="p-1.5 sm:p-2 bg-green-50 dark:bg-green-900/30 rounded-lg shrink-0"
-                >
-                  <svg
-                    class="w-4 h-4 sm:w-5 sm:h-5 text-green-600 dark:text-green-400"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      stroke-linecap="round"
-                      stroke-linejoin="round"
-                      stroke-width="2"
-                      d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4"
-                    />
-                  </svg>
-                </div>
-                <div class="text-left min-w-0">
-                  <p
-                    class="text-sm font-medium text-gray-900 dark:text-white truncate"
-                  >
-                    {{ repo.name }}
-                  </p>
-                  <p class="text-xs text-gray-500 dark:text-gray-400 truncate">
-                    {{ repo.path }}
-                  </p>
-                </div>
-              </div>
-              <svg
-                class="w-5 h-5 text-gray-400 transition-transform shrink-0 ml-2"
-                :class="{ 'rotate-180': repo.expanded }"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
+            <div class="px-4 sm:px-5 py-3 sm:py-4">
+              <button
+                @click="toggleRepo(repo)"
+                class="w-full flex items-center justify-between hover:opacity-80 transition-opacity"
               >
-                <path
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  stroke-width="2"
-                  d="M19 9l-7 7-7-7"
-                />
-              </svg>
-            </button>
+                <div class="flex items-center space-x-3 min-w-0">
+                  <div
+                    class="p-1.5 sm:p-2 bg-green-50 dark:bg-green-900/30 rounded-lg shrink-0"
+                  >
+                    <svg
+                      class="w-4 h-4 sm:w-5 sm:h-5 text-green-600 dark:text-green-400"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        stroke-width="2"
+                        d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4"
+                      />
+                    </svg>
+                  </div>
+                  <div class="text-left min-w-0">
+                    <p
+                      class="text-sm font-medium text-gray-900 dark:text-white truncate"
+                    >
+                      {{ repo.name }}
+                    </p>
+                    <p
+                      class="text-xs text-gray-500 dark:text-gray-400 truncate"
+                    >
+                      {{ repo.path }}
+                    </p>
+                  </div>
+                </div>
+                <svg
+                  class="w-5 h-5 text-gray-400 transition-transform shrink-0 ml-2"
+                  :class="{ 'rotate-180': repo.expanded }"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    stroke-width="2"
+                    d="M19 9l-7 7-7-7"
+                  />
+                </svg>
+              </button>
+
+              <!-- 下载最新备份按钮 -->
+              <button
+                @click.stop="downloadLatestArchive(repo)"
+                :disabled="downloading === `${repo.path}::latest`"
+                class="mt-2 w-full px-3 py-1.5 text-xs sm:text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors disabled:opacity-50"
+              >
+                {{
+                  downloading === `${repo.path}::latest`
+                    ? '准备中...'
+                    : '下载最新备份'
+                }}
+              </button>
+            </div>
 
             <div
               v-if="repo.expanded"
@@ -183,52 +200,33 @@
                 该仓库没有存档
               </div>
 
-              <div v-else>
-                <!-- 下载最新备份按钮 -->
+              <div v-else class="divide-y divide-gray-100 dark:divide-gray-700">
                 <div
-                  class="px-4 sm:px-5 py-2.5 bg-gray-50 dark:bg-gray-800/50 border-b border-gray-100 dark:border-gray-700"
+                  v-for="(archive, idx) in repo.archives"
+                  :key="archive.name"
+                  class="flex items-center justify-between px-4 sm:px-5 py-2.5 sm:py-3 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors"
                 >
+                  <div class="min-w-0 flex-1">
+                    <p
+                      class="text-xs sm:text-sm font-medium text-gray-900 dark:text-white truncate"
+                    >
+                      {{ archive.name }}
+                    </p>
+                    <p class="text-xs text-gray-500 dark:text-gray-400">
+                      {{ formatDate(archive.start) }}
+                    </p>
+                  </div>
                   <button
-                    @click="downloadLatestArchive(repo)"
-                    :disabled="downloading === `${repo.path}::latest`"
-                    class="w-full sm:w-auto px-3 py-1.5 text-xs sm:text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors disabled:opacity-50"
+                    @click="downloadArchive(repo, idx)"
+                    :disabled="downloading === `${repo.path}::${idx}`"
+                    class="ml-2 sm:ml-3 px-2.5 sm:px-3 py-1 sm:py-1.5 text-xs sm:text-sm bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors disabled:opacity-50 shrink-0"
                   >
                     {{
-                      downloading === `${repo.path}::latest`
+                      downloading === `${repo.path}::${idx}`
                         ? '准备中...'
-                        : '下载最新备份'
+                        : '下载'
                     }}
                   </button>
-                </div>
-
-                <div class="divide-y divide-gray-100 dark:divide-gray-700">
-                  <div
-                    v-for="(archive, idx) in repo.archives"
-                    :key="archive.name"
-                    class="flex items-center justify-between px-4 sm:px-5 py-2.5 sm:py-3 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors"
-                  >
-                    <div class="min-w-0 flex-1">
-                      <p
-                        class="text-xs sm:text-sm font-medium text-gray-900 dark:text-white truncate"
-                      >
-                        {{ archive.name }}
-                      </p>
-                      <p class="text-xs text-gray-500 dark:text-gray-400">
-                        {{ formatDate(archive.start) }}
-                      </p>
-                    </div>
-                    <button
-                      @click="downloadArchive(repo, idx)"
-                      :disabled="downloading === `${repo.path}::${idx}`"
-                      class="ml-2 sm:ml-3 px-2.5 sm:px-3 py-1 sm:py-1.5 text-xs sm:text-sm bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors disabled:opacity-50 shrink-0"
-                    >
-                      {{
-                        downloading === `${repo.path}::${idx}`
-                          ? '准备中...'
-                          : '下载'
-                      }}
-                    </button>
-                  </div>
                 </div>
               </div>
             </div>
@@ -315,9 +313,12 @@ import {
   savePassword as savePasswordToDB,
   getAllPasswords
 } from '../utils/borgPasswordDB'
+import { useToast } from '../composables/useToast'
+
+const { success, error, info, warning } = useToast()
 
 const loading = ref(true)
-const error = ref('')
+const errorMsgPage = ref('')
 const available = ref(true)
 const unavailableMessage = ref('')
 const repos = ref([])
@@ -341,7 +342,7 @@ onMounted(async () => {
 
 async function loadRepos() {
   loading.value = true
-  error.value = ''
+  errorMsgPage.value = ''
   try {
     const res = await borgAPI.repos()
     if (!res.data.available) {
@@ -360,7 +361,7 @@ async function loadRepos() {
       needsPassword: false
     }))
   } catch (err) {
-    error.value = err.response?.data?.error || '加载 Borg 仓库失败'
+    errorMsgPage.value = err.response?.data?.error || '加载 Borg 仓库失败'
   } finally {
     loading.value = false
   }
@@ -512,7 +513,7 @@ async function downloadArchive(repo, archiveIndex) {
     document.body.removeChild(a)
   } catch (err) {
     const msg = err.response?.data?.error || '准备下载失败'
-    alert(msg)
+    error(msg)
     console.error('下载失败:', err)
   } finally {
     setTimeout(() => {
@@ -522,19 +523,46 @@ async function downloadArchive(repo, archiveIndex) {
 }
 
 async function downloadLatestArchive(repo) {
-  if (!repo.archives || repo.archives.length === 0) {
-    alert('该仓库没有存档')
-    return
-  }
   const key = `${repo.path}::latest`
   downloading.value = key
+
   try {
+    // 先检查是否有保存的密码
+    let passphrase = repo.passphrase || ''
+    if (!repo.passphraseReady) {
+      let savedPassword = null
+      try {
+        savedPassword = await getPassword(repo.path)
+      } catch {
+        // ignore
+      }
+
+      if (savedPassword) {
+        passphrase = savedPassword
+        repo.passphrase = savedPassword
+        repo.passphraseReady = true
+      } else {
+        // 没有保存的密码，弹出对话框
+        const pwd = await promptPassword(repo)
+        if (pwd === null) {
+          // 用户取消
+          downloading.value = ''
+          return
+        }
+        passphrase = pwd
+      }
+    }
+
+    // 获取存档列表
+    const archivesRes = await borgAPI.archives(repo.path, passphrase)
+    if (!archivesRes.data.archives || archivesRes.data.archives.length === 0) {
+      warning('该仓库没有存档')
+      downloading.value = ''
+      return
+    }
+
     // 下载第一个（最新）存档
-    const res = await borgAPI.prepareDownload(
-      repo.path,
-      0,
-      repo.passphrase || ''
-    )
+    const res = await borgAPI.prepareDownload(repo.path, 0, passphrase)
     const url = getBorgDownloadUrl(res.data)
     const archiveName = res.data.archiveName || 'latest-archive'
     const a = document.createElement('a')
@@ -545,8 +573,21 @@ async function downloadLatestArchive(repo) {
     document.body.removeChild(a)
   } catch (err) {
     const msg = err.response?.data?.error || '准备下载失败'
-    alert(msg)
-    console.error('下载最新备份失败:', err)
+    if (err.response?.status === 403 && msg.includes('密码')) {
+      // 密码错误，弹出密码输入
+      const pwd = await promptPassword(repo, '密码错误，请重新输入正确的密码')
+      if (pwd !== null) {
+        repo.passphrase = pwd
+        repo.passphraseReady = true
+        // 重试下载
+        downloading.value = ''
+        await downloadLatestArchive(repo)
+        return
+      }
+    } else {
+      error(msg)
+      console.error('下载最新备份失败:', err)
+    }
   } finally {
     setTimeout(() => {
       downloading.value = ''
@@ -573,7 +614,7 @@ async function downloadAllReposWithPassword() {
     )
 
     if (reposWithPassword.length === 0) {
-      alert('没有已保存密码的仓库')
+      warning('没有已保存密码的仓库')
       return
     }
 
@@ -636,12 +677,13 @@ async function downloadAllReposWithPassword() {
       }
     }
 
-    alert(
-      `批量下载完成！成功: ${batchDownloadProgress.value}/${batchDownloadTotal.value}`
+    success(
+      `批量下载完成！成功: ${batchDownloadProgress.value}/${batchDownloadTotal.value}`,
+      4000
     )
   } catch (err) {
     console.error('批量下载失败:', err)
-    alert('批量下载失败: ' + err.message)
+    error('批量下载失败: ' + err.message)
   } finally {
     batchDownloading.value = false
     batchDownloadProgress.value = 0
